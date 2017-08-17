@@ -10,7 +10,7 @@ import pickle
 
 def extract_features(img, pixel, kernel_size=5):
     """Static function that returns a feature vector based on a given image (numpy array) and pixel (i, j)"""
-    features = []      # TODO
+    features = []
 
     nx, ny, nc = img.shape
     px, py = pixel
