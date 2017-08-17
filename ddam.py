@@ -25,11 +25,11 @@ def extract_features(img, pixel, kernel_size=5):
     n_average = 0
     for ii in range(px - dk, px + dk):
         for jj in range(py - dk, py + dk):
-            if ii < 0 or jj < 0 or ii > nx or jj > ny:
+            if ii < 0 or jj < 0 or ii >= nx or jj >= ny:
                 pass
             else:
                 for kk in range(nc):
-                    rgb_average[kk] += 1
+                    rgb_average[kk] += img[ii, jj, kk]
                 n_average += 1
 
     for kk in range(nc):
