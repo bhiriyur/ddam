@@ -12,23 +12,28 @@ def extract_features(img, pixel, kernel_size=5):
     """Static function that returns a feature vector based on a given image (numpy array) and pixel (i, j)"""
     features = []      # TODO
 
+    nx, ny, nc = img.shape
     px, py = pixel
-    dk = kernel_size/2
-    nc = 3
+    dk = kernel_size >> 1    # This is the same as int(kernel_size/2)
 
     # Add Pixel based features
     for i in range(nc):
         features.append(img[px, py, i])     # Add basic RGB of pixel
 
-    # Add Kernel based features
+    # Add Kernel based features as average
+    rgb_average = [0]*nc
+    n_average = 0
     for ii in range(px - dk, px + dk):
         for jj in range(py - dk, py + dk):
             if ii < 0 or jj < 0 or ii > nx or jj > ny:
-                for kk in range(nc):
-                    features.append(0.0)
+                pass
             else:
                 for kk in range(nc):
-                    features.append(img[ii, jj, kk])
+                    rgb_average[kk] += 1
+                n_average += 1
+
+    for kk in range(nc):
+        features.append(rgb_average[kk]/n_average)
 
     return features
 
