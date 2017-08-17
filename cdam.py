@@ -5,7 +5,6 @@ from keras.layers import Flatten, Dense, Dropout
 from keras.utils import plot_model
 from keras.preprocessing.image import img_to_array, load_img, flip_axis, random_shift
 from keras.optimizers import Adam
-from keras import backend as K
 import os
 import cv2
 import pandas as pd
@@ -15,8 +14,18 @@ import sys
 from tqdm import tqdm
 
 
+def extract_cracks(sub_img):
+    # TODO
+    return 0
+
+
+def apply_random_transform(img):
+    # TODO
+    return img
+
 class CrackDetector(object):
     def __init__(self):
+        # ConvNet Parameters
         self.model = None
         self.subimage_size = (50, 50)       # Size of the sub image which be classified
         self.conv_filters = [6, 12, 24]     # Number of filters in each layer
@@ -32,6 +41,11 @@ class CrackDetector(object):
         self.dense_dropouts = [0.5, 0.5, 0.5]
         self.learning_rate = 0.0001
         self.model_file = None
+
+        # Training Parameters
+        self.batch_size = 256
+        self.nb_epochs = 10
+        self.samples_per_epoch = 10
 
     def build_model(self):
         """Builds the convolutional neural network to detect cracks in images
@@ -54,8 +68,6 @@ class CrackDetector(object):
                 regularizer = l2(self.regularization_val)
             else:
                 regularizer = None
-
-
 
             if i == 0:
                 input_shape = (self.subimage_size[0], self.subimage_size[0], 3)
@@ -109,18 +121,66 @@ class CrackDetector(object):
         # Print summary
         model.summary()
 
-        return model
+        self.model = model
 
+    def data_generator(self, imgs_original, imgs_analyzed):
+
+        while True:
+            n = len(imgs_analyzed)
+            x, y = [], []
+            i = 0       # image number
+            xbeg = 0
+            ybeg = 0
+            count = 0   # Sample number
+            while count < self.batch_size:
+                img = plt.imread(imgs_analyzed[i])
+                nx, ny, _ = img.shape
+                xend = xbeg + self.subimage_size
+                yend = ybeg + self.subimage_size
+
+                # Sub image and crack extent
+                xi = imgs_original[xbeg:xend, ybeg:yend, :]
+                y1 = extract_cracks(imgs_analyzed[xbeg:xend, ybeg:yend, :])
+
+                # Add random transformations (flip, rotate, etc)
+                xi_transformed = apply_random_transform(xi)
+
+                x.append(xi_transformed)
+                y.append(yi)
+                count += 1
+
+                # Move to next in same row
+                xbeg += self.subimage_size
+
+                if xbeg + self.subimage_size > nx:
+                    # If reached end of row, move to next column and start from 0
+                    ybeg += self.subimage_size
+                    xbeg = 0
+
+                    if ybeg + self.subimage_size > ny:
+                        # If reached end of column also, move to next image and start over
+                        i = (i+1) % n
+                        xbeg = 0
+                        ybeg = 0
+
+            yield np.array(x), np.array(y)
 
     def train_model(self, imgs_original, imgs_analyzed, picklefile='cdam.pkl'):
         """Performs training and saves weights"""
-        # TODO
+        if self.model is None:
+            # Building model
+            self.build_model()
+
+        T = self.data_generator(imgs_original, imgs_analyzed)
+        self.model.fit_generator(T, steps_per_epoch=self.samples_per_epoch,
+                                 epochs=self.nb_epochs,
+                                 verbose=1)
+
         pass
 
     def test_model(self, img):
         # TODO
         pass
-
 
 
 if __name__ == '__main__':
