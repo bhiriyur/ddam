@@ -3,9 +3,9 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
-import cv2
 import matplotlib.pyplot as plt
 import pickle
+# import cv2
 
 
 def extract_features(img, pixel, kernel_size=5):
