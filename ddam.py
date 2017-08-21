@@ -8,7 +8,7 @@ import pickle
 # import cv2
 
 
-def extract_features(img, pixel, kernel_size=5):
+def extract_features(img, pixel, kernel_size=11):
     """Static function that returns a feature vector based on a given image (numpy array) and pixel (i, j)"""
     features = []
 
@@ -20,9 +20,11 @@ def extract_features(img, pixel, kernel_size=5):
     for i in range(nc):
         features.append(img[px, py, i])     # Add basic RGB of pixel
 
-    # Add Kernel based features as average
+    # Add kernel based average to features
     rgb_average = [0]*nc
     n_average = 0
+    # rgb_var = np.empty([kernel_size, kernel_size, nc])
+    redarr,grnarr,bluarr= [], [], []
     for ii in range(px - dk, px + dk):
         for jj in range(py - dk, py + dk):
             if ii < 0 or jj < 0 or ii >= nx or jj >= ny:
@@ -30,10 +32,25 @@ def extract_features(img, pixel, kernel_size=5):
             else:
                 for kk in range(nc):
                     rgb_average[kk] += img[ii, jj, kk]
+
+                redarr.append(img[ii, jj, 0])
+                grnarr.append(img[ii, jj, 1])
+                bluarr.append(img[ii, jj, 2])
                 n_average += 1
 
     for kk in range(nc):
         features.append(rgb_average[kk]/n_average)
+
+    # Add intensity/average_intensity to features
+    for kk in range(nc):
+        features.append(img[px, py, kk]/rgb_average[kk]*n_average)
+
+    # Add kernel based variance to features
+    red_var = np.var(redarr)
+    grn_var = np.var(grnarr)
+    blu_var = np.var(grnarr)
+
+    features.extend([red_var,grn_var,blu_var])
 
     return features
 
@@ -43,8 +60,8 @@ def extract_label(analyzed, pixel):
         analyzed image is assumed to be of shape (m x n x 3) containing RGB channels (uint8)
         Labels:
             0 : [Undamaged]     White   [R > 200 && G > 200 && B > 200]
-            1 : [Crack]         Red     [R > 200 && G < 50  && B < 50 ]
-            2 : [Rebar]         Green   [R < 50  && G > 200 && B < 50 ]
+            1 : [Rebar]         Red     [R > 200 && G < 50  && B < 50 ]
+            2 : [Crack]         Green   [R < 50  && G > 200 && B < 50 ]
             3 : [Spall]         Blue    [R < 20  && G < 50  && B > 200]
     """
     r, g, b = analyzed[pixel[0], pixel[1], :]
@@ -55,10 +72,10 @@ def extract_label(analyzed, pixel):
         return 0    # undamaged
 
     if r > max_threshold and g < min_threshold and b < min_threshold:
-        return 1    # crack
+        return 1    # rebar
 
     if r < min_threshold and g > max_threshold and b < min_threshold:
-        return 2    # rebar
+        return 2    # crack
 
     if r < min_threshold and g < min_threshold and b > max_threshold:
         return 3    # spall
@@ -76,6 +93,7 @@ class DamageDetector(object):
         self.classifier = None
         self.C = 0.0001
         self.x_scaler = None
+        self.threshold = 0.7
 
         # Load pickle file with training data if available
         if picklefile is not None:
@@ -100,10 +118,10 @@ class DamageDetector(object):
         all_labels = []
 
         print("** TRAINING WITH SVM **")
-        for i in range(n):
-            original = plt.imread(imgs_original[i])
-            analyzed = plt.imread(imgs_analyzed[i])
-            print("{:3} Extracting features from {} ...".format(i, imgs_original[i]))
+        for ii in range(n):
+            original = plt.imread(imgs_original[ii])
+            analyzed = plt.imread(imgs_analyzed[ii])
+            print("{:3} Extracting features from {} ...".format(ii, imgs_original[ii]))
 
             # Make sure they are both of the same shape
             h1, w1, _ = original.shape
@@ -113,11 +131,17 @@ class DamageDetector(object):
 
             for i in range(h1):
                 for j in range(w1):
-                    features = extract_features(original, (i, j))
                     label = extract_label(analyzed, (i, j))
+                    addsample = True
+                    if label == 0:
+                        randnum = np.random.uniform()
+                        if randnum > self.threshold:
+                            addsample = False
 
-                    all_features.append(features)
-                    all_labels.append(label)
+                    if addsample:
+                        features = extract_features(original, (i, j))
+                        all_features.append(features)
+                        all_labels.append(label)
 
         # Store the features in Numpy array
         x = np.array(all_features, dtype=np.float64)
@@ -125,6 +149,7 @@ class DamageDetector(object):
 
         # Fit a per-column scaler and apply
         x_scaler = StandardScaler().fit(x)
+        self.x_scaler = x_scaler
         scaled_x = x_scaler.transform(x)
 
         # Split to training /validation sets
@@ -136,9 +161,9 @@ class DamageDetector(object):
         n_train = len(x_train)
         n_features = len(x_train[0])
         n_test = len(x_test)
-        print("Num features         = {}".format(n_features))
-        print("Num training samples = {}".format(n_train))
-        print("Num test samples     = {}".format(n_test))
+        print("Num features               = {}".format(n_features))
+        print("Num training samples       = {}".format(n_train))
+        print("Num validation samples     = {}".format(n_test))
 
         # Set up the Support Vector Classifier
         self.classifier = LinearSVC(C=self.C)
@@ -173,16 +198,17 @@ class DamageDetector(object):
 
         # Initialize analyzed
         h, w, nc = img.shape
-        analyzed = 255*np.ones((h, w, 3), dtype='int8')      # Start as undamaged
+        analyzed = 255*np.ones((h, w, 3), dtype='uint8')      # Start as undamaged
 
         # Sweep through image
         t0 = time.time()
         n, n1, n2, n3, n4 = 0, 0, 0, 0, 0
         for i in range(h):
             for j in range(w):
-                features = extract_features(img, (i, j))
-                test_features = self.x_scaler.transform(features)
-                prediction = self.classifier.predict(test_features)
+                features = np.array(extract_features(img, (i, j)), dtype=np.float64)
+                test_features = features.reshape(1, -1)
+                test_features = self.x_scaler.transform(test_features)
+                prediction = self.classifier.predict(test_features)[0]
                 n += 1
                 if prediction == 0:
                     analyzed[i, j, :] = [255, 255, 255]
@@ -197,7 +223,7 @@ class DamageDetector(object):
                     n3 += 1
 
                 elif prediction == 3:
-                    analyzed[i, j, :] = [0, 255, 0]
+                    analyzed[i, j, :] = [0, 0, 255]
                     n4 += 1
 
         duration = time.time() - t0
@@ -206,16 +232,16 @@ class DamageDetector(object):
         print("RESULTS: ({:9.0f} secs".format(duration))
         print("TOTAL     = {}".format(n))
         print("UNDAMAGED = {}".format(n1))
-        print("CRACK     = {}".format(n2))
-        print("REBAR     = {}".format(n3))
+        print("REBAR     = {}".format(n2))
+        print("CRACK     = {}".format(n3))
         print("SPALL     = {}".format(n4))
 
         # Show test results
         plt.figure("Result")
         plt.subplot(1, 2, 1)
-        plt.plot(img)
+        plt.imshow(img)
         plt.subplot(1, 2, 2)
-        plt.plot(analyzed)
+        plt.imshow(analyzed)
         plt.show()
 
         return
