@@ -3,25 +3,39 @@ from keras.layers.convolutional import Conv2D, MaxPooling2D
 from keras.regularizers import l2, l1
 from keras.layers import Flatten, Dense, Dropout
 from keras.utils import plot_model
-from keras.preprocessing.image import img_to_array, load_img, flip_axis, random_shift
+import glob
+# from keras.preprocessing.image import img_to_array, load_img, flip_axis, random_shift
 from keras.optimizers import Adam
-import os
-import cv2
-import pandas as pd
+import pickle
+# import os
+# import cv2
+# import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import sys
-from tqdm import tqdm
+# import sys
+# from tqdm import tqdm
 
 
 def extract_cracks(sub_img):
-    # TODO
-    return 0
+    nx, ny, _ = sub_img.shape
+    ntotal = float(nx*ny)
+    ncrack = 0
+    min_threshold = 50
+    max_threshold = 200
+    for i in range(nx):
+        for j in range(ny):
+            if sub_img[i, j, 1] < min_threshold and  \
+                            sub_img[i, j, 2] >= max_threshold and \
+                            sub_img[i, j, 3] < min_threshold:
+                ncrack += 1
+
+    return float(ncrack)/ntotal
 
 
 def apply_random_transform(img):
     # TODO
     return img
+
 
 class CrackDetector(object):
     def __init__(self):
@@ -133,14 +147,15 @@ class CrackDetector(object):
             ybeg = 0
             count = 0   # Sample number
             while count < self.batch_size:
-                img = plt.imread(imgs_analyzed[i])
-                nx, ny, _ = img.shape
-                xend = xbeg + self.subimage_size
-                yend = ybeg + self.subimage_size
+                img_orig = plt.imread(imgs_analyzed[i])
+                img_anal = plt.imread(imgs_analyzed[i])
+                nx, ny, _ = img_orig.shape
+                xend = xbeg + self.subimage_size[0]
+                yend = ybeg + self.subimage_size[1]
 
                 # Sub image and crack extent
-                xi = imgs_original[xbeg:xend, ybeg:yend, :]
-                y1 = extract_cracks(imgs_analyzed[xbeg:xend, ybeg:yend, :])
+                xi = img_orig[xbeg:xend, ybeg:yend, :]
+                yi = extract_cracks(img_anal[xbeg:xend, ybeg:yend, :])
 
                 # Add random transformations (flip, rotate, etc)
                 xi_transformed = apply_random_transform(xi)
@@ -150,14 +165,14 @@ class CrackDetector(object):
                 count += 1
 
                 # Move to next in same row
-                xbeg += self.subimage_size
+                xbeg += self.subimage_size[0]
 
-                if xbeg + self.subimage_size > nx:
+                if xbeg + self.subimage_size[0] > nx:
                     # If reached end of row, move to next column and start from 0
-                    ybeg += self.subimage_size
+                    ybeg += self.subimage_size[1]
                     xbeg = 0
 
-                    if ybeg + self.subimage_size > ny:
+                    if ybeg + self.subimage_size[1] > ny:
                         # If reached end of column also, move to next image and start over
                         i = (i+1) % n
                         xbeg = 0
@@ -165,17 +180,19 @@ class CrackDetector(object):
 
             yield np.array(x), np.array(y)
 
-    def train_model(self, imgs_original, imgs_analyzed, picklefile='cdam.pkl'):
+    def train_model(self, imgs_original, imgs_analyzed, picklefile='cdam.h5'):
         """Performs training and saves weights"""
         if self.model is None:
             # Building model
             self.build_model()
 
-        T = self.data_generator(imgs_original, imgs_analyzed)
-        self.model.fit_generator(T, steps_per_epoch=self.samples_per_epoch,
+        tgen = self.data_generator(imgs_original, imgs_analyzed)
+        self.model.fit_generator(tgen, steps_per_epoch=self.samples_per_epoch,
                                  epochs=self.nb_epochs,
                                  verbose=1)
 
+        if picklefile is not None:
+            self.model.save(picklefile)
         pass
 
     def test_model(self, img):
@@ -186,3 +203,6 @@ class CrackDetector(object):
 if __name__ == '__main__':
     net = CrackDetector()
     net.build_model()
+    train_images_orig = glob.glob("NineSigma\\images-for-training\\*original.jpg")
+    train_images_anal = glob.glob("NineSigma\\images-for-training\\*analyzed_pixated.jpg")
+    net.train_model(train_images_orig, train_images_anal)
