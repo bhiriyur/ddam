@@ -24,7 +24,7 @@ def extract_features(img, pixel, kernel_size=11):
     rgb_average = [0]*nc
     n_average = 0
     # rgb_var = np.empty([kernel_size, kernel_size, nc])
-    redarr,grnarr,bluarr= [], [], []
+    redarr, grnarr, bluarr = [], [], []
     for ii in range(px - dk, px + dk):
         for jj in range(py - dk, py + dk):
             if ii < 0 or jj < 0 or ii >= nx or jj >= ny:
@@ -50,7 +50,7 @@ def extract_features(img, pixel, kernel_size=11):
     grn_var = np.var(grnarr)
     blu_var = np.var(grnarr)
 
-    features.extend([red_var,grn_var,blu_var])
+    features.extend([red_var, grn_var, blu_var])
 
     return features
 
@@ -245,5 +245,3 @@ class DamageDetector(object):
         plt.show()
 
         return
-
-
