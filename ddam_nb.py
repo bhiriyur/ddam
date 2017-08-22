@@ -2,7 +2,10 @@ import time
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import LinearSVC
+from sklearn.svm import LinearSVC, SVC
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import GaussianNB
 import matplotlib.pyplot as plt
 import pickle
 # import cv2
@@ -89,9 +92,12 @@ def extract_label(analyzed, pixel):
 class DamageDetector(object):
     def __init__(self, picklefile=None):
         """Damage detector class"""
+        self.classifier_type = 1   # 0=GaussianNaiveBayes, 1=LinearSVM, 2=SVC(rbf), 3=DecisionTree, 4=RandomForest
         self.trained = False
         self.classifier = None
-        self.C = 0.1
+        self.C = 1.0
+        self.gamma = 'auto'
+        self.n_estimators = 10
         self.x_scaler = None
         self.threshold = 0.7
 
@@ -107,48 +113,55 @@ class DamageDetector(object):
             except Exception as e:
                 print("Error loading stored classifier from {}: {}".format(picklefile, e.message))
 
-    def train(self, imgs_original, imgs_analyzed, picklefile="ddam.pkl"):
+    def train(self, imgs_original, imgs_analyzed, picklefile="ddam.pkl", saved_features=None):
         """Trains the classifier and saves to picklefile"""
 
-        # Make sure we have the same number of images
-        n = len(imgs_original)
-        assert(n == len(imgs_analyzed))
+        if saved_features is None:
+            # Make sure we have the same number of images
+            n = len(imgs_original)
+            assert(n == len(imgs_analyzed))
 
-        all_features = []
-        all_labels = []
+            all_features = []
+            all_labels = []
 
-        print("** TRAINING WITH SVM **")
-        for ii in range(n):
-            original = plt.imread(imgs_original[ii])
-            analyzed = plt.imread(imgs_analyzed[ii])
-            print("{:3} Extracting features from {} ...".format(ii, imgs_original[ii]))
+            print("** TRAINING WITH SVM **")
+            for ii in range(n):
+                original = plt.imread(imgs_original[ii])
+                analyzed = plt.imread(imgs_analyzed[ii])
+                print("{:3} Extracting features from {} ...".format(ii, imgs_original[ii]))
 
-            # Make sure they are both of the same shape
-            h1, w1, _ = original.shape
-            h2, w2, _ = analyzed.shape
-            assert (h1 == h2)
-            assert (w1 == w2)
+                # Make sure they are both of the same shape
+                h1, w1, _ = original.shape
+                h2, w2, _ = analyzed.shape
+                assert (h1 == h2)
+                assert (w1 == w2)
 
-            for i in range(0, h1, 2):
-                for j in range(0, w1, 2):
-                    label = extract_label(analyzed, (i, j))
-                    addsample = True
-                    if label == 0:
-                        randnum = np.random.uniform()
-                        if randnum > self.threshold:
-                            addsample = False
+                for i in range(0, h1, 2):
+                    for j in range(0, w1, 2):
+                        label = extract_label(analyzed, (i, j))
+                        addsample = True
+                        if label == 0:
+                            randnum = np.random.uniform()
+                            if randnum > self.threshold:
+                                addsample = False
 
-                    if addsample:
-                        features = extract_features(original, (i, j))
-                        all_features.append(features)
-                        all_labels.append(label)
+                        if addsample:
+                            features = extract_features(original, (i, j))
+                            all_features.append(features)
+                            all_labels.append(label)
 
-        # Store the features in Numpy array
-        x = np.array(all_features, dtype=np.float64)
-        y = np.array(all_labels, dtype=np.int)
+            # Store the features in Numpy array
+            x = np.array(all_features, dtype=np.float64)
+            y = np.array(all_labels, dtype=np.int)
 
-        with open('features.pkl','wb') as f:
-            pickle.dump([x, y], f)
+            with open('features.pkl','wb') as f:
+                pickle.dump([x, y], f)
+
+        else:
+            with open(saved_features,'rb') as f:
+                data = pickle.load(f)
+                x = data[0]
+                y = data[1]
 
         # Fit a per-column scaler and apply
         x_scaler = StandardScaler().fit(x)
@@ -169,7 +182,16 @@ class DamageDetector(object):
         print("Num validation samples     = {}".format(n_test))
 
         # Set up the Support Vector Classifier
-        self.classifier = LinearSVC(C=self.C)
+        if self.classifier_type == 0:
+            self.classifier = GaussianNB()
+        elif self.classifier_type == 1:
+            self.classifier = LinearSVC(C=self.C)
+        elif self.classifier_type == 2:
+            self.classifier = SVC(C=self.C, gamma=self.gamma)
+        elif self.classifier_type == 3:
+            self.classifier = DecisionTreeClassifier()
+        elif self.classifier_type == 4:
+            self.classifier = RandomForestClassifier(n_estimators=self.n_estimators)
 
         # Check the training time for SVC
         t = time.time()
@@ -184,7 +206,7 @@ class DamageDetector(object):
         # Save to pickle file
         with open(picklefile, 'wb') as f:
             pickle.dump([self.classifier, self.C, self.x_scaler], f)
-        print("Saved SVC to {}".format(picklefile))
+        print("Saved Classifier to {}".format(picklefile))
 
         self.trained = True
 
