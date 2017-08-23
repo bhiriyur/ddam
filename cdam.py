@@ -24,11 +24,11 @@ def extract_cracks(sub_img):
     max_threshold = 200
     for i in range(nx):
         for j in range(ny):
-            if sub_img[i, j, 1] < min_threshold and  \
-                            sub_img[i, j, 2] >= max_threshold and \
-                            sub_img[i, j, 3] < min_threshold:
+            if sub_img[i, j, 0] < min_threshold and  \
+                            sub_img[i, j, 1] >= max_threshold and \
+                            sub_img[i, j, 2] < min_threshold:
                 ncrack += 1
-
+    # print(ncrack)
     return float(ncrack)/ntotal
 
 
